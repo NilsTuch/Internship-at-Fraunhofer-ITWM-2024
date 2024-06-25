@@ -27,15 +27,15 @@ error = tol + 1
 iteration = 0
 dt = .3
 
-tsum = int(t_end/dt) + 1
-t = np.linspace(t_0, t_end, tsum)
+t_sum = int(t_end/dt) + 1
+t = np.linspace(t_0, t_end, t_sum)
 
-sol = np.zeros((3,tsum))
+sol = np.zeros((3,t_sum))
 sol[0, 0] = x_0[0]
 sol[1, 0] = x_0[1]
 sol[2, 0] = t_0
 
-for i in range(1, tsum):
+for i in range(1, t_sum):
     t_i = t[i]
     nu = sol[0, i-1]
     s = sol[1, i-1]
@@ -57,14 +57,14 @@ while error > tol:
     iteration += 1
     dt= 10**-iteration
     
-    tsum = int(t_end/dt) + 1
-    t = np.linspace(t_0, t_end, tsum)
+    t_sum = int(t_end/dt) + 1
+    t = np.linspace(t_0, t_end, t_sum)
 
-    sol = np.zeros((3,tsum))
+    sol = np.zeros((3,t_sum))
     sol[0, 0] = x_0[0]
     sol[1, 0] = x_0[1]
     sol[2, 0] = t_0
-    for i in range(1, tsum):
+    for i in range(1, t_sum):
         t_i = t[i]
         nu = sol[0, i-1]
         s = sol[1, i-1]
@@ -79,7 +79,7 @@ while error > tol:
         sol[0][i] = x_i[0]
         sol[1][i] = x_i[1]
         sol[2, i] = t_i
-    for i in range(0, int(tsum/10)):
+    for i in range(0, int(t_sum/10)):
         error_at_i = abs(sol[0, 10*i] - last_sol[0, i])
         error = max(error, error_at_i)
     last_sol = sol

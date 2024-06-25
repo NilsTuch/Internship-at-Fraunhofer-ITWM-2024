@@ -71,14 +71,14 @@ dts = []
 for j in range(0, iterations):
     dt = 10**-j
     dts.append(dt)
-    tsum = int((t_end - t_0)/dt) + 1
-    t = np.linspace(t_0, t_end, tsum)
+    t_sum = int((t_end - t_0)/dt) + 1
+    t = np.linspace(t_0, t_end, t_sum)
 
-    sol = np.zeros((2,tsum))
+    sol = np.zeros((2,t_sum))
     sol[0, 0] = x_0[0]
     sol[1, 0] = x_0[1]
 
-    for i in range(1, tsum):
+    for i in range(1, t_sum):
         t_i = t[i]
         nu = sol[0, i-1]
         sus = sol[1, i-1]

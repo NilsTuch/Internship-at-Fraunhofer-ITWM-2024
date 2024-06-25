@@ -10,6 +10,9 @@ import sympy as sp
 from matplotlib.offsetbox import AnchoredText
 import json
 
+# add bool for legend in or out of plot
+# add bool for param box
+
 # Bericht auf deutsch => programm auf deutsch?
 # wie sollte ich die plots bennenen?
 # y-achse beschriften?
@@ -34,10 +37,8 @@ dataset_names = [
     
     ]
 
-# first_variable = 2
-second_variable = 1 # TODO
 kappas_together = True
-variables = ["§\Delta$t", "tolerance", "initial stepsize", "stepsize divisor, A, A"] # 0, 1, 2, 3, 4, 5
+variables = ["$\Delta$t", "tol", "$h_{init}$", "$h_{div}$", "A", "B"] # 0, 1, 2, 3, 4, 5
 
 def get_2nd_var(possible_vars):
     x = -1
