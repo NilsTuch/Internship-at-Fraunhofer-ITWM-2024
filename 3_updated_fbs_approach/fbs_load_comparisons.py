@@ -5,69 +5,43 @@ Created : June 2024
 """
 
 import matplotlib.pyplot as plt
-import numpy as np
-import sympy as sp
 from matplotlib.offsetbox import AnchoredText
 import json
 
-# add bool for legend in or out of plot
-# add bool for param box
+show_parameter_box = True
+legend_outside_plot = True
 
-# Bericht auf deutsch => programm auf deutsch?
-# wie sollte ich die plots bennenen?
-# y-achse beschriften?
-
-# more than 2 vars possible?
-
-# nur iterations anschauen ignoriert laufzeit der einzelnen iterations durch wiederholte teilung von 
-    # step_size. 
-    # Laufzeit vergleichen? Als mittelwert über zB 5 durchgänge.
-
-dataset_names = [
-    # "dt|dt = 0.25-0.5--8|tolerance = 1e-08|initial stepsize = 0.01|stepsize divisor = 10|A = 10.0|B = 1.0",
-    
-    "A|dt = 4|tolerance = 1e-06|initial stepsize = 0.01|stepsize divisor = 4|A = 0.01-0.1--10000.0|B = 1.0",
-    
-    # "A|dt = 2|tolerance = 0.001|initial stepsize = 0.01|stepsize divisor = 10|A = 0.01-0.1--10000.0|B = 1.0",
-    # "A|dt = 2|tolerance = 0.0001|initial stepsize = 0.01|stepsize divisor = 10|A = 0.01-0.1--10000.0|B = 1.0",
-    
-    # "A|dt = 2|tolerance = 1e-05|initial stepsize = 0.01|stepsize divisor = 10|A = 0.01-0.1--10000.0|B = 1.0",
-    # "A|dt = 2|tolerance = 1e-06|initial stepsize = 0.01|stepsize divisor = 10|A = 0.01-0.1--10000.0|B = 1.0",
-    
-    
+dataset_names = [ # without "data/" adn ".json"
+    "A|dt = 4|tol = 0.0001|h_init = 0.01|h_div= 4|A = 1-2--2|B = 1.0",
+    "A|dt = 4|tol = 0.0001|h_init = 0.01|h_div= 4|A = 1-2--2|B = 10.0"
     ]
 
-kappas_together = True
 variables = ["$\Delta$t", "tol", "$h_{init}$", "$h_{div}$", "A", "B"] # 0, 1, 2, 3, 4, 5
 
-def get_2nd_var(possible_vars):
+def get_2nd_chosen_par(possible_vars):
     x = -1
     for var in possible_vars:
         if any(var.count(x) < len(var) for x in var):
             x = possible_vars.index(var)
     return x
 
-# positioning
-if True: # TODO
-    legend_x = .9
-    legend_y = .7
-    legend_width = .3
-    legend_height = .2
-    
-    text_x = 400
-    text_y = 70
-    text_width = .3
-    text_height = .2
+# positioning of parameter box
+legend_x = .9
+legend_y = .7
+legend_width = .3
+legend_height = .2
+text_x = 400
+text_y = 70
+text_width = .3
+text_height = .2
 
-directory_name = "fbs_data"
+directory_name = "data"
 iter_fig, iter_ax = plt.subplots()
-fitJ_fig, fitJ_ax = plt.subplots()
-fitError_fig, fitError_ax = plt.subplots()
+J_fig, J_ax = plt.subplots()
+K_fig, K_ax = plt.subplots()
 projJ_fig, projJ_ax = plt.subplots()
-figs = [iter_fig, fitJ_fig, fitError_fig, projJ_fig,]
-axs = [iter_ax, fitJ_ax, fitError_ax, projJ_ax,]
-if kappas_together: kappa_fig, kappa_ax = plt.subplots()
-else: kappa_figs, kappa_axs = [], []
+figs = [iter_fig, J_fig, K_fig, projJ_fig,]
+axs = [iter_ax, J_ax, K_ax, projJ_ax,]
     
 A = 10
 B = 1
@@ -81,12 +55,9 @@ Bs = []
 all_parameters = [dts, tolerances, init_steps, step_divisors, As, Bs]
 
 list_parameters = []
-list_values = []
+list_parameter_range = []
 list_RK_data = []
 list_MPRK_data = []
-list_ts = []
-list_RK_kappas = []
-list_MPRK_kappas = []
     
 for dataset_name in dataset_names:
     # loading the json
@@ -97,21 +68,21 @@ for dataset_name in dataset_names:
     file.close()
     
     if True:
-        variable = data["variable"]
+        first_chosen_par = data["chosen_parameter"]
         variables = data["variables"]
         
         parameters = data["parameters"]
-        dt, tolerance = parameters["dt"], parameters["tolerance"]
-        init_step, step_divisor = parameters["initial stepsize"], parameters["stepsize divisor"]
-        A, B = parameters["A"], parameters["B"]
+        dt  = parameters["dt"]
+        tolerance = parameters["tol"]
+        init_step = parameters["h_init"]
+        step_divisor = parameters["h_div"]
+        A = parameters["A"]
+        B = parameters["B"]
         
-        values = data["values"]
+        parameter_range = data["parameter_range"]
         results = data["data"]
-        RK_data, MPRK_data = [results["RK"], results["MPRK"]]
-        kappa = data["kappa"]
-        t = kappa["time"]
-        RK_kappas = kappa["RK"]
-        MPRK_kappas = kappa["MPRK"]
+        RK_data = results["RK"]
+        MPRK_data = results["MPRK"]
         
         dts.append(dt)
         tolerances.append(tolerance)
@@ -121,60 +92,37 @@ for dataset_name in dataset_names:
         Bs.append(B)
         
         list_parameters.append(parameters)
-        list_values.append(values)
+        list_parameter_range.append(parameter_range)
         list_RK_data.append(RK_data)
         list_MPRK_data.append(MPRK_data)
-        
-        list_ts.append(t)
-        list_RK_kappas.append(RK_kappas)
-        list_MPRK_kappas.append(MPRK_kappas)
 
 # determine second varianle
-second_variable = get_2nd_var([dts, tolerances, init_steps, step_divisors, As, Bs])
+second_chosen_par = get_2nd_chosen_par([dts, tolerances, init_steps, step_divisors, As, Bs])
 
-for i in range(len(list_values)):
+for i in range(len(list_parameter_range)):
     parameters = list_parameters[i]
-    values = list_values[i]
+    parameter_range = list_parameter_range[i]
     RK_data = list_RK_data[i]
     MPRK_data = list_MPRK_data[i]
     
-    # ts = list_ts[i]
-    RK_kappas = list_RK_kappas[i]
-    MPRK_kapas = list_MPRK_kappas[i]
-        
-    
     # plots
     if True:
-        if second_variable != -1:
-            label_suffix = ", " + variables[second_variable] + " = "  # TODO
-            label_suffix += str(parameters[variables[second_variable]])
+        if second_chosen_par != -1:
+            label_suffix = ", " + variables[second_chosen_par] + " = "  # TODO
+            label_suffix += str(parameters[variables[second_chosen_par]])
         else: label_suffix = ""
         
-        iter_ax.plot(values, RK_data["Iterations"], label="Computed with RK" + label_suffix)
-        iter_ax.plot(values, MPRK_data["Iterations"], label="Computed with MPRK" + label_suffix)
+        iter_ax.plot(parameter_range, RK_data["Iterations"], label="Computed with RK" + label_suffix)
+        iter_ax.plot(parameter_range, MPRK_data["Iterations"], label="Computed with MPRK" + label_suffix)
         
-        fitJ_ax.plot(values, RK_data["fitJ"], label="Computed with RK" + label_suffix)
-        fitJ_ax.plot(values, MPRK_data["fitJ"], label="Computed with MPRK" + label_suffix)
+        J_ax.plot(parameter_range, RK_data["J"], label="Computed with RK" + label_suffix)
+        J_ax.plot(parameter_range, MPRK_data["J"], label="Computed with MPRK" + label_suffix)
         
-        fitError_ax.plot(values, RK_data["fit Error"], label="Computed with RK" + label_suffix)
-        fitError_ax.plot(values, MPRK_data["fit Error"], label="Computed with MPRK" + label_suffix)
+        K_ax.plot(parameter_range, RK_data["K"], label="Computed with RK" + label_suffix)
+        K_ax.plot(parameter_range, MPRK_data["K"], label="Computed with MPRK" + label_suffix)
 
-        projJ_ax.plot(values, RK_data["konjJ"], label="Computed with RK" + label_suffix)
-        projJ_ax.plot(values, MPRK_data["konjJ"], label="Computed with MPRK" + label_suffix)
-        
-        # for RK_kappa, MPRK_kappa, t, i in zip(RK_kappas, MPRK_kappas, ts, range(len(RK_kappas))):
-        #     if not kappas_together:
-        #         kappa_fig, kappa_ax = plt.subplots()
-        #         kappa_figs.append(kappa_fig)
-        #         kappa_axs.append(kappa_ax)
-        #     label_suffix = ", " + variables[variable] + " = " + str(values[i])
-        #     kappa_ax.plot(t, RK_kappa, label = "RK_kappa" + label_suffix)
-        #     kappa_ax.plot(t, MPRK_kappa, label = "MPRK_kappa" + label_suffix)
-           
-        #     kappa_fig.legend(loc = "upper left", bbox_to_anchor=(legend_x, legend_y, legend_width, legend_height))
-        #     kappa_ax.set_xlabel(variables[variable])
-        #     kappa_ax.grid()
-        #     kappa_ax.set_title("kappa in Abhängigkeit von " + variables[variable])
+        projJ_ax.plot(parameter_range, RK_data["projJ"], label="Computed with RK" + label_suffix)
+        projJ_ax.plot(parameter_range, MPRK_data["projJ"], label="Computed with MPRK" + label_suffix)
 
 fixed_parts = ["dt = " + str(dt), 
                "tolerance = " + str(tolerance), 
@@ -182,28 +130,29 @@ fixed_parts = ["dt = " + str(dt),
                "stepsize divisor = " + str(step_divisor),
                "A = " + str(A),
                "B = " + str(B)]
-if second_variable != -1: 
-    fixed_parts[second_variable] = variables[second_variable] + " = see legend"
-fixed = '\n'.join(fixed_parts[:variable] + fixed_parts[variable + 1:])
+if second_chosen_par != -1: 
+    fixed_parts[second_chosen_par] = variables[second_chosen_par] + " = see legend"
+fixed = '\n'.join(fixed_parts[:first_chosen_par] + fixed_parts[first_chosen_par + 1:])
 
 for fig, ax in zip(figs, axs):
     at = AnchoredText(fixed, pad = 0.5, borderpad = 0, 
                       loc="upper left", bbox_to_anchor=(text_x, text_y, text_width, text_height))
     at.patch.set_edgecolor('lightgrey')
     at.patch.set_boxstyle("round,pad=0,rounding_size=0.2")
-    # fig.add_artist(at)
+    if show_parameter_box:
+        fig.add_artist(at)
     
-    ax.legend(loc="best")
-    # fig.legend(loc = "upper left", bbox_to_anchor=(legend_x, legend_y, legend_width, legend_height))
-    ax.set_xlabel(variables[variable])
-    if variable == 0: ax.set_xscale('log', base = 2)
-    elif variable == 1 or variable == 2 or variable > 3: ax.set_xscale('log', base = 10)
+    if legend_outside_plot:
+        fig.legend(loc = "upper left", bbox_to_anchor=(legend_x, legend_y, legend_width, legend_height))
+    else:
+        ax.legend(loc="best")
+    ax.set_xlabel(variables[first_chosen_par])
+    if first_chosen_par == 0: ax.set_xscale('log', base = 2)
+    elif first_chosen_par in (1, 2, 4, 5): ax.set_xscale('log', base = 10)
     ax.grid()
-    # ax.set_yscale('symlog')
-    # plt.tight_layout(pad = 3)
+
 iter_ax.set_yscale('log', base = 10)
-iter_ax.set_title("# Iterations dependent on " + variables[variable])
-fitJ_ax.set_title("J dependent on " + variables[variable])
-# fitError_ax.set_yscale('log')
-fitError_ax.set_title("K dependent on " + variables[variable])
-projJ_ax.set_title("J on the projection dependent on " + variables[variable])
+iter_ax.set_title("# Iterations dependent on " + variables[first_chosen_par])
+J_ax.set_title("J dependent on " + variables[first_chosen_par])
+K_ax.set_title("K dependent on " + variables[first_chosen_par])
+projJ_ax.set_title("J on the projection dependent on " + variables[first_chosen_par])

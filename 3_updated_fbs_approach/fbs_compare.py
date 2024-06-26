@@ -10,29 +10,17 @@ import sympy as sp
 import warnings
 from matplotlib.offsetbox import AnchoredText
 import json
-
 # TODO: program is currently not saving
+
+# in {"dt", "tol", "stepsize_init", "stepsize_div", "A", "B"} or in {0, ..., 5}
+chosen_parameter = "A"
+parameter_range = [1, 2]
+
 # print info:
-print_values = True
+print_parameter_range = True
 print_parameters = True
 print_progress = True
 print_file_name = True
-
-variables = ["$\Delta$t", "tol", "$h_{init}$", "$h_{div}$", "A", "B"]
-print_variables = ["dt", "tol", "h_init", "h_div", "A", "B"]
-variable = 0 # in {0, 1, ..., 5}
-
-values = [2, 4]
-# values = [2**-2, 2**-1, 2**0, 2*1, 2**2, 2**3] # dt
-# values = [10**-6, 10**-5, 10**-4, 10**-3, 10**-2] # tol
-# values = [10**-10, 10**-9, 10**-8, 10**-7, 10**-6, 10**-5, 10**-4, 10**-3, 10**-2] # tol (larger range)
-# values = [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1] # init
-# values = [2, 4, 6, 8, 10] # divisor
-# values = [2, 3, 4, 5, 6, 7, 8, 9, 10] # divisor (higher res)
-# values = np.arange(2, 20 + .5, .5).tolist() # divisor (higher res 2)
-# values = [2, 4, 6 ,8 ,10, 12, 14, 16, 18, 20] # divsor (larger range 1)
-# values = [2, 4, 6 ,8 ,10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30] # divsor (larger range 2)
-# values = [1e-2, 1e-1, 1e0, ] # A
 
 ###############################################################################
 # x : initial-ODE | y : Adjoint | u : Control
@@ -41,43 +29,54 @@ values = [2, 4]
 
 # default values
 dt = 4
-tol = 1e-6
+tol = 1e-4
 h_init = 1e-2
 h_div = 4
 A = 1e1
 B = 1e0
 parameters = [dt, tol, h_init, h_div, A, B]
 
-last_iteration = -1 # if last_iteration >=1 the calculations stop after that many iterations
-
 # minimal allowed stepsize in u
 h_min = 1e-13
 # constant for Armijo-condition
 Armijo = 1e-3
-# length of fit/start of projection
+# length of fit
 t_u = 270
-# k_min ^= nminimal k value for MPRK
+# minimal k value for MPRK
 k_min = 0.04
-x_0 = [0.007, 0.993, 0.3 - k_min]
 
+x_0 = [0.007, 0.993, 0.3 - k_min]
 ALPHA = 0.03
 TAU = 3.58
 DEL = 4
-# datapoints[0] == time (int), datapoints[1] == i meassured
+
+parameter_str_to_int = {
+    "dt" : 0,
+    "tol" : 1,
+    "stepsize_init" : 2,
+    "stepsize_div" : 3,
+    "A" : 4,
+    "B" : 5}
+if isinstance(chosen_parameter, str):
+    chosen_parameter = parameter_str_to_int[chosen_parameter]
+
+# datapoints[0] == time (days), datapoints[1] == i meassured
 datapoints = np.load("datapoints.npy")
 t_0 = datapoints[0, 0]
-t_end = datapoints[0, len(datapoints[0]) - 1]
+t_end = datapoints[0, -1]
 
 # print info:
+print_variables = ["dt", "tol", "h_init", "h_div", "A", "B"]
 def print_info(print_val, print_param):
     if print_val:
-        print(print_variables[variable] + " in {" + ", ".join(str(value) for value in values) + "}")
+        print("Iterating over: " + print_variables[chosen_parameter] + " in {" + ", ".join(str(value) for value in parameter_range) + "}")
     if print_param:
+        print("With parameters set to: ")
         for i in range(len(print_variables)):
-            if i != variable:
+            if i != chosen_parameter:
                 print("    " + print_variables[i] + " = " + str(parameters[i]))
     return
-print_info(print_values, print_parameters)
+print_info(print_parameter_range, print_parameters)
 
 # General functions
 def dU(k, x_k, y_k, u_k):
@@ -98,7 +97,21 @@ def K(I):
     value = 0
     for i in range(u_sum):
         value += (I[i] - Pi[i]) ** 2 * dt
-    return value 
+    return value
+def get_u_k(k):
+    if k % 1 == 0:
+        u_k = u[k]
+    else:
+        k = int(k)
+        u_k = (u[k] + u[k + 1]) / 2
+    return u_k
+def get_pi_k(k):
+    if k % 1 == 0:
+        pi = Pi[k]
+    else:
+        k = int(k)
+        pi = (Pi[k] + Pi[k + 1]) / 2
+    return pi
 
 # RK functions
 # I = X1/(X2 * (X3 + k_min))
@@ -124,32 +137,45 @@ dy3_dt = sp.lambdify([Symbols], dY3_dt, "numpy")
 
 def Xprime(k, x_k):
     x1, x2, x3 = x_k
-    if k % 1 == 0:
-        u_k = u[k]
-    else:
-        k = int(k)
-        u_k = (u[k] + u[k + 1]) / 2
+    u_k = get_u_k(k)
+    
     vals_k = np.append(x_k, (0, 0, 0, u_k, 0))
+    
     dx1dt = dx1_dt(vals_k)
     dx2dt = dx2_dt(vals_k)
     dx3dt = dx3_dt(vals_k)
+    
     return np.array([dx1dt, dx2dt, dx3dt])
 def Yprime(k, x_k, y_k):
     y1, y2, y3 = y_k
     x1, x2, x3 = x_k
-    if k % 1 == 0:
-        u_k = u[k]
-        pi = Pi[k]
-    else:
-        k = int(k)
-        u_k = (u[k] + u[k + 1]) / 2
-        pi = (Pi[k] + Pi[k + 1]) / 2
+    u_k = get_u_k(k)
+    pi_k = get_pi_k(k)
+    
     vals_k = np.append(x_k, y_k)
-    vals_k = np.append(vals_k, (u_k, pi))
+    vals_k = np.append(vals_k, (u_k, pi_k))
+    
     dy1dt = dy1_dt(vals_k)
     dy2dt = dy2_dt(vals_k)
     dy3dt = dy3_dt(vals_k)
+    
     return np.array([dy1dt, dy2dt, dy3dt])
+def RK_forward(k, x_k):
+    r1 = Xprime(k, x_k)
+    r2 = Xprime(k + 1 / 2, x_k + dt / 2 * r1)
+    r3 = Xprime(k + 1 / 2, x_k + dt / 2 * r2)
+    r4 = Xprime(k + 1, x_k + dt * r3)
+    
+    x_k1 = x_k + (dt / 6 * (r1 + 2 * r2 + 2 * r3 + r4))
+    return x_k1
+def RK_backward(k, x_k, y_k):
+    r1 = Yprime(k, x_k, y_k)
+    r2 = Yprime(k - 1 / 2, x_k, y_k - dt / 2 * r1)
+    r3 = Yprime(k - 1 / 2, x_k, y_k - dt / 2 * r2)
+    r4 = Yprime(k - 1, x_k, y_k - dt * r3)
+    
+    y_k_1 = y_k - (dt / 6 * (r1 + 2 * r2 + 2 * r3 + r4))
+    return y_k_1
 
 # MPRK functions
 # productive and destructive terms
@@ -171,21 +197,13 @@ def d2(k, x_k):
     return np.array([d21, 0, 0])
 def p3(k, x_k):
     x1, x2, x3 = x_k
-    if k % 1 == 0:
-        u_k = u[k]
-    else:
-        k = int(k)
-        u_k = (u[k] + u[k + 1]) / 2
+    u_k = get_u_k(k)
     p33 = 0
     if u_k >= 0: p33 = u_k
     return np.array([0, 0, p33])
 def d3(k, x_k):
     x1, x2, x3 = x_k
-    if k % 1 == 0:
-        u_k = u[k]
-    else:
-        k = int(k)
-        u_k = (u[k] + u[k + 1]) / 2
+    u_k = get_u_k(k)
     d33 = 0
     if u_k < 0: d33 = -u_k
     return np.array([0, 0, d33])
@@ -239,26 +257,26 @@ def X_n1(k, x_k):
     X_n1 = np.linalg.solve(A, x_k)
     return X_n1
 
+RK_Iterations = []
+MPRK_Iterations = []
 RK_J = []
 MPRK_J = []
 RK_projJ = []
 MPRK_projJ = []
-RK_Iterations = []
-MPRK_Iterations = []
 RK_K = []
 MPRK_K = []
-for value in values:
-    if variable == 0:
+for value in parameter_range:
+    if chosen_parameter == 0:
         dt = value
-    elif variable == 1:
+    elif chosen_parameter == 1:
         tol = value
-    elif variable == 2:
+    elif chosen_parameter == 2:
         h_init = value
-    elif variable == 3:
+    elif chosen_parameter == 3:
         h_div = value
-    elif variable == 4:
+    elif chosen_parameter == 4:
         A = value
-    elif variable == 5:
+    elif chosen_parameter == 5:
         B = value
     
     # time
@@ -269,70 +287,53 @@ for value in values:
     Pi = np.interp(t, datapoints[0], datapoints[1])
     
     # RK Initialisation
-    if True:
-        new_J = -np.inf
-        old_J = -np.inf
-        x = np.zeros((t_sum, 3))
-        x[0] = x_0
-        y = np.zeros((t_sum, 3))
-        u = np.zeros(t_sum)
-        old_u = u.copy()
-        
-        # Forward
-        for i in range(t_sum - 1):
-            x_i = x[i]
-            r1 = Xprime(i, x_i)
-            r2 = Xprime(i + 1 / 2, x_i + dt / 2 * r1)
-            r3 = Xprime(i + 1 / 2, x_i + dt / 2 * r2)
-            r4 = Xprime(i + 1, x_i + dt * r3)
-            x_i1 = x_i + (dt / 6 * (r1 + 2 * r2 + 2 * r3 + r4))
-            x[i + 1] = x_i1
-        # Infectious
-        I = x[:, 0] / (x[:, 1] * (x[:, 2] + k_min))
-        
-        # Backward
-        for i in range(1, u_sum):
-            j = u_sum - i
-            t_j = t[j]
-            x_j = x[j]
-            y_j = y[j]
+    new_J = -np.inf
+    old_J = -np.inf
+    x = np.zeros((t_sum, 3))
+    x[0] = x_0
+    y = np.zeros((t_sum, 3))
+    u = np.zeros(t_sum)
+    old_u = u.copy()
     
-            r1 = Yprime(j, x_j, y_j)
-            r2 = Yprime(j - 1 / 2, x_j, y_j - dt / 2 * r1)
-            r3 = Yprime(j - 1 / 2, x_j, y_j - dt / 2 * r2)
-            r4 = Yprime(j - 1, x_j, y_j - dt * r3)
-            y_j_1 = y_j - (dt / 6 * (r1 + 2 * r2 + 2 * r3 + r4))
+    # Forward
+    for i in range(t_sum - 1):
+        x_i = x[i]
+        x_i1 = RK_forward(i, x_i)
+        x[i + 1] = x_i1
+    # Infectious
+    I = x[:, 0] / (x[:, 1] * (x[:, 2] + k_min))
     
-            y[j - 1] = y_j_1
+    # Backward
+    for i in range(1, u_sum):
+        j = u_sum - i
+        x_j = x[j]
+        y_j = y[j]
+        y_j_1 = RK_backward(j, x_j, y_j)
+        y[j - 1] = y_j_1
+
+    # Sweep
+    del_u = np.zeros(t_sum)
+    for i in range(u_sum):
+        x_i = x[i]
+        u_i = u[i]
+        y_i = y[i]
+        del_u[i] = dU(i, x_i, y_i, u_i)
+    old_J = J(I, u)
+    del_J = 0
+    projection_J = projJ(I, u)
     
-        # Sweep
-        del_u = np.zeros(t_sum)
-        for i in range(u_sum):
-            x_i = x[i]
-            u_i = u[i]
-            y_i = y[i]
-            del_u[i] = dU(i, x_i, y_i, u_i)
-        old_J = J(I, u)
-        del_J = 0
-        projection_J = projJ(I, u)
-        
-        error = 1
-        iterations = 0
-        step = h_init
-        done = False
+    error = 1
+    iterations = 0
+    h_n = h_init
+    done = False
     # RK Iteration
     while error >= tol and not (done):
-        while new_J <= old_J + Armijo * del_J * step or np.isnan(new_J):  # while (step too large)
-            u = old_u.copy() + step * del_u.copy()
-            old_step = step
+        while new_J <= old_J + Armijo * del_J * h_n or np.isnan(new_J):  # while (h_n too large)
+            u = old_u.copy() + h_n * del_u.copy()
             # Forward
             for i in range(t_sum - 1):
                 x_i = x[i]
-                r1 = Xprime(i, x_i)
-                r2 = Xprime(i + 1 / 2, x_i + dt / 2 * r1)
-                r3 = Xprime(i + 1 / 2, x_i + dt / 2 * r2)
-                r4 = Xprime(i + 1, x_i + dt * r3)
-                x_i1 = x_i + (dt / 6 * (r1 + 2 * r2 + 2 * r3 + r4))
+                x_i1 = RK_forward(i, x_i)
                 x[i + 1] = x_i1
             # Infectious
             with warnings.catch_warnings(): # TODO
@@ -340,7 +341,7 @@ for value in values:
                 I = x[:, 0] / (x[:, 1] * (x[:, 2] + k_min))
                 new_J = J(I, u)
             del_J = abs(old_J - new_J)
-            if step <= h_min:
+            if h_n <= h_min:
                 print("(MPRK) No improvement possible at iteration " + str(iterations) 
                       + " (dt = " + str(dt) 
                       + ", tol = " + str(tol)  
@@ -350,30 +351,21 @@ for value in values:
                       + ", B = " + str(B) + ")")
                 done = True
                 break
-            else: step = step / h_div
+            else: h_n = h_n / h_div
         if not done:
             iterations += 1
             error = del_J
             old_J = new_J
             projection_J = projJ(I, u)
-            step = h_init
+            h_n = h_init
             old_u = u.copy()
-        if iterations == last_iteration:
-            error = 0
         
         # Backward
         for i in range(1, u_sum):
             j = u_sum - i
-            t_j = t[j]
             x_j = x[j]
             y_j = y[j]
-    
-            r1 = Yprime(j, x_j, y_j)
-            r2 = Yprime(j - 1 / 2, x_j, y_j - dt / 2 * r1)
-            r3 = Yprime(j - 1 / 2, x_j, y_j - dt / 2 * r2)
-            r4 = Yprime(j - 1, x_j, y_j - dt * r3)
-            y_j_1 = y_j - (dt / 6 * (r1 + 2 * r2 + 2 * r3 + r4))
-            
+            y_j_1 = RK_backward(j, x_j, y_j)
             y[j - 1] = y_j_1
     
         # Sweep
@@ -391,58 +383,49 @@ for value in values:
     RK_K.append(K(I))
     
     # MPRK Initialisation
-    if True:
-        new_J = -np.inf
-        old_J = -np.inf
-        x = np.zeros((t_sum, 3))
-        x[0] = x_0
-        y = np.zeros((t_sum, 3))
-        u = np.zeros(t_sum)
-        old_u = u.copy()
-        
-        # Forward
-        for i in range(t_sum - 1):
-            x_i = x[i]
-            x_i1 = X_n1(i, x_i)
-            x[i + 1] = x_i1
-        # Infectious
-        I = x[:, 0] / (x[:, 1] * (x[:, 2] + k_min))
-        
-        # Backward
-        for i in range(1, u_sum):
-            j = u_sum - i
-            t_j = t[j]
-            x_j = x[j]
-            y_j = y[j]
+    new_J = -np.inf
+    old_J = -np.inf
+    x = np.zeros((t_sum, 3))
+    x[0] = x_0
+    y = np.zeros((t_sum, 3))
+    u = np.zeros(t_sum)
+    old_u = u.copy()
     
-            r1 = Yprime(j, x_j, y_j)
-            r2 = Yprime(j - 1 / 2, x_j, y_j - dt / 2 * r1)
-            r3 = Yprime(j - 1 / 2, x_j, y_j - dt / 2 * r2)
-            r4 = Yprime(j - 1, x_j, y_j - dt * r3)
-            y_j_1 = y_j - (dt / 6 * (r1 + 2 * r2 + 2 * r3 + r4))
+    # Forward
+    for i in range(t_sum - 1):
+        x_i = x[i]
+        x_i1 = X_n1(i, x_i)
+        x[i + 1] = x_i1
+    # Infectious
+    I = x[:, 0] / (x[:, 1] * (x[:, 2] + k_min))
     
-            y[j - 1] = y_j_1
+    # Backward
+    for i in range(1, u_sum):
+        j = u_sum - i
+        x_j = x[j]
+        y_j = y[j]
+        y_j_1 = RK_backward(j, x_j, y_j)
+        y[j - 1] = y_j_1
+
+    # Sweep
+    del_u = np.zeros(t_sum)
+    for i in range(u_sum):
+        x_i = x[i]
+        u_i = u[i]
+        y_i = y[i]
+        del_u[i] = dU(i, x_i, y_i, u_i)
+    old_J = J(I, u)
+    del_J = 0
+    projection_J = projJ(I, u)
     
-        # Sweep
-        del_u = np.zeros(t_sum)
-        for i in range(u_sum):
-            x_i = x[i]
-            u_i = u[i]
-            y_i = y[i]
-            del_u[i] = dU(i, x_i, y_i, u_i)
-        old_J = J(I, u)
-        del_J = 0
-        projection_J = projJ(I, u)
-        
-        error = 1
-        iterations = 0
-        step = h_init
-        done = False
+    error = 1
+    iterations = 0
+    h_n = h_init
+    done = False
     # MPRK Iteration
     while error >= tol and not (done):
-        while new_J <= old_J + Armijo * del_J * step or np.isnan(new_J):  # while (step too large)
-            u = old_u.copy() + step * del_u.copy()
-            old_step = step
+        while new_J <= old_J + Armijo * del_J * h_n or np.isnan(new_J):  # while (h_n too large)
+            u = old_u.copy() + h_n * del_u.copy()
             # Forward
             for i in range(t_sum - 1):
                 x_i = x[i]
@@ -456,7 +439,7 @@ for value in values:
                 I = x[:, 0] / (x[:, 1] * (x[:, 2] + k_min))
                 new_J = J(I, u)
             del_J = abs(old_J - new_J)
-            if step <= h_min: 
+            if h_n <= h_min: 
                 print("(MPRK) No improvement possible at iteration " + str(iterations) 
                       + " (dt = " + str(dt) 
                       + ", tol = " + str(tol)  
@@ -466,30 +449,21 @@ for value in values:
                       + ", B = " + str(B) + ")")
                 done = True
                 break
-            else: step = step / h_div
+            else: h_n = h_n / h_div
         if not done:
             iterations += 1
             error = del_J
             old_J = new_J
             projection_J = projJ(I, u)
-            step = h_init
+            h_n = h_init
             old_u = u.copy()
-        if iterations == last_iteration:
-            error = 0
         
         # Backward
         for i in range(1, u_sum):
             j = u_sum - i
-            t_j = t[j]
             x_j = x[j]
             y_j = y[j]
-    
-            r1 = Yprime(j, x_j, y_j)
-            r2 = Yprime(j - 1 / 2, x_j, y_j - dt / 2 * r1)
-            r3 = Yprime(j - 1 / 2, x_j, y_j - dt / 2 * r2)
-            r4 = Yprime(j - 1, x_j, y_j - dt * r3)
-            y_j_1 = y_j - (dt / 6 * (r1 + 2 * r2 + 2 * r3 + r4))
-            
+            y_j_1 = RK_backward(j, x_j, y_j)
             y[j - 1] = y_j_1
     
         # Sweep
@@ -506,70 +480,79 @@ for value in values:
     MPRK_projJ.append(projection_J)
     MPRK_K.append(K(I))
     
-    if print_progress: print("Done with " + variables[variable] + " = " + str(value)) # TODO
+    if print_progress: print("Done with " + print_variables[chosen_parameter] + " = " + str(value))
 
-fixed_parts = ["dt = " + str(dt), 
+variables_list = ["$\Delta$t", "tol", "$h_{init}$", "$h_{div}$", "A", "B"]
+fixed_parts = ["$\Delta$t = " + str(dt), 
                "tol = " + str(tol), 
-               "h_init = " + str(h_init), 
-               "h_div = " + str(h_div), 
+               "$h_{init}$ = " + str(h_init), 
+               "$h_{div}$ = " + str(h_div), 
                "A = " + str(A),
                "B = " + str(B)]
-fixed = "\n".join(fixed_parts[:variable] + fixed_parts[variable + 1:])
+fixed = "\n".join(fixed_parts[:chosen_parameter] + fixed_parts[chosen_parameter + 1:])
 
 for RK_plt, MPRK_plt in zip([RK_Iterations, RK_J, RK_K, RK_projJ],
                             [MPRK_Iterations, MPRK_J, MPRK_K, MPRK_projJ]):
     fig, ax = plt.subplots()
     at = AnchoredText(fixed, pad = 0.5, borderpad = 2, 
-                      loc="lower right", bbox_to_anchor=(180, -16))
+                      loc="lower right", bbox_to_anchor=(180, -20))
     at.patch.set_boxstyle("round,pad=0,rounding_size=0.4")
     ax.add_artist(at)
-    ax.plot(values, RK_plt, label="RK")
-    ax.plot(values, MPRK_plt, label="MPRK")
+    ax.plot(parameter_range, RK_plt, label="RK")
+    ax.plot(parameter_range, MPRK_plt, label="MPRK")
     ax.legend(loc="best")
-    ax.set_xlabel(variables[variable])
-    if variable == 0: ax.set_xscale("log", base = 2)
-    elif variable == 1 or variable == 2 or variable > 3: ax.set_xscale("log", base = 10)
+    ax.set_xlabel(variables_list[chosen_parameter])
+    if chosen_parameter == 0: ax.set_xscale("log", base = 2)
+    elif chosen_parameter == 1 or chosen_parameter == 2 or chosen_parameter > 3: ax.set_xscale("log", base = 10)
     ax.grid()
     if RK_plt == RK_Iterations:
-        ax.set_title("# Iterations dependent on " + variables[variable])
+        ax.set_title("# Iterations dependent on " + variables_list[chosen_parameter])
     elif RK_plt == RK_J:
-        ax.set_title("J dependent on " + variables[variable])
+        ax.set_title("J dependent on " + variables_list[chosen_parameter])
     elif RK_plt == RK_K:
-        ax.set_title("K dependent on " + variables[variable])
+        ax.set_title("K dependent on " + variables_list[chosen_parameter])
     elif RK_plt == RK_projJ:
-        ax.set_title("J on $[t_u, t_{end}]$ dependent on " + variables[variable])
+        ax.set_title("J on $[t_u, t_{end}]$ dependent on " + variables_list[chosen_parameter])
     plt.tight_layout(pad = 3)
     plt.show()
 
 # save Results
-fixed_parts[variable] = variables[variable] + " = " + str(
-    values[0]) + "-" + str(values[1]) + "--" + str(values[-1])
-result_name = variables[variable] + "|" + "|".join(fixed_parts)
-file_name = "fbs_data/" + result_name + ".json"
+fixed_parts = ["dt = " + str(dt), 
+               "tol = " + str(tol), 
+               "h_init = " + str(h_init), 
+               "h_div= " + str(h_div), 
+               "A = " + str(A),
+               "B = " + str(B)]
+fixed_parts[chosen_parameter] = (print_variables[chosen_parameter] + 
+                                 " = " + str(parameter_range[0]) + 
+                                 "-" + str(parameter_range[1]) + 
+                                 "--" + str(parameter_range[-1]))
+result_name = variables_list[chosen_parameter] + "|" + "|".join(fixed_parts)
+file_name = "data/" + result_name + ".json"
 result = {
-    "variable" : variable,
-    "variables" : variables,
+    "chosen_parameter" : chosen_parameter,
+    "variables" : variables_list,
     "parameters" : {
-        variables[0] : dt,
-        variables[1] : tol,
-        variables[2] : h_init,
-        variables[3] : h_div,
-        variables[4] : A,
-        variables[5] : B,
+        print_variables[0] : dt,
+        print_variables[1] : tol,
+        print_variables[2] : h_init,
+        print_variables[3] : h_div,
+        print_variables[4] : A,
+        print_variables[5] : B,
     },
-    "values" : values,
+    "parameter_range" : parameter_range,
     "data" : {
         "RK": {
             "Iterations" : RK_Iterations,
-            "fit_j" : RK_J,
-            "konjJ" : RK_projJ,
-            "fit Error" : RK_K,
+            "J" : RK_J,
+            "projJ" : RK_projJ,
+            "K" : RK_K,
         },
         "MPRK": {
             "Iterations" : MPRK_Iterations,
-            "fit_j" : MPRK_J,
-            "konjJ" : MPRK_projJ,
-            "fit Error" : MPRK_K,
+            "J" : MPRK_J,
+            "projJ" : MPRK_projJ,
+            "K" : MPRK_K,
         }
     }
 }

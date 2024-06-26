@@ -14,8 +14,7 @@ import warnings
 # h : stepsize in u
 
 show_nth = 20  # every show_nth iteration is ploted
-last_iteration = -1 # if last_iteration >=1 the program stops after that many iterations
-positivity = True # = True for MPRK, = False for RK
+patankar = True # = True for MPRK, = False for RK
 
 dt = 4
 tol = 1e-6
@@ -38,7 +37,7 @@ datapoints = np.load("datapoints.npy")
 
 # time
 t_0 = datapoints[0, 0]
-t_end = datapoints[0, len(datapoints[0]) - 1]
+t_end = datapoints[0, -1]
 t_sum = int((t_end - t_0) / dt) + 1
 t = np.linspace(t_0, t_end, t_sum)
 u_sum = int((t_u - t_0) / dt) + 1
@@ -62,7 +61,21 @@ def K(I):
     value = 0
     for i in range(u_sum):
         value += (I[i] - Pi[i]) ** 2 * dt
-    return value 
+    return value
+def get_u_k(k):
+    if k % 1 == 0:
+        u_k = u[k]
+    else:
+        k = int(k)
+        u_k = (u[k] + u[k + 1]) / 2
+    return u_k
+def get_pi_k(k):
+    if k % 1 == 0:
+        pi = Pi[k]
+    else:
+        k = int(k)
+        pi = (Pi[k] + Pi[k + 1]) / 2
+    return pi
 
 # RK functions
 # I = X1/(X2 * (X3 + k_min))
@@ -88,32 +101,45 @@ dy3_dt = sp.lambdify([Symbols], dY3_dt, "numpy")
 
 def Xprime(k, x_k):
     x1, x2, x3 = x_k
-    if k % 1 == 0:
-        u_k = u[k]
-    else:
-        k = int(k)
-        u_k = (u[k] + u[k + 1]) / 2
+    u_k = get_u_k(k)
+    
     vals_k = np.append(x_k, (0, 0, 0, u_k, 0))
+    
     dx1dt = dx1_dt(vals_k)
     dx2dt = dx2_dt(vals_k)
     dx3dt = dx3_dt(vals_k)
+    
     return np.array([dx1dt, dx2dt, dx3dt])
 def Yprime(k, x_k, y_k):
     y1, y2, y3 = y_k
     x1, x2, x3 = x_k
-    if k % 1 == 0:
-        u_k = u[k]
-        pi = Pi[k]
-    else:
-        k = int(k)
-        u_k = (u[k] + u[k + 1]) / 2
-        pi = (Pi[k] + Pi[k + 1]) / 2
+    u_k = get_u_k(k)
+    pi_k = get_pi_k(k)
+    
     vals_k = np.append(x_k, y_k)
-    vals_k = np.append(vals_k, (u_k, pi))
+    vals_k = np.append(vals_k, (u_k, pi_k))
+    
     dy1dt = dy1_dt(vals_k)
     dy2dt = dy2_dt(vals_k)
     dy3dt = dy3_dt(vals_k)
+    
     return np.array([dy1dt, dy2dt, dy3dt])
+def RK_forward(k, x_k):
+    r1 = Xprime(k, x_k)
+    r2 = Xprime(k + 1 / 2, x_k + dt / 2 * r1)
+    r3 = Xprime(k + 1 / 2, x_k + dt / 2 * r2)
+    r4 = Xprime(k + 1, x_k + dt * r3)
+    
+    x_k1 = x_k + (dt / 6 * (r1 + 2 * r2 + 2 * r3 + r4))
+    return x_k1
+def RK_backward(k, x_k, y_k):
+    r1 = Yprime(k, x_k, y_k)
+    r2 = Yprime(k - 1 / 2, x_k, y_k - dt / 2 * r1)
+    r3 = Yprime(k - 1 / 2, x_k, y_k - dt / 2 * r2)
+    r4 = Yprime(k - 1, x_k, y_k - dt * r3)
+    
+    y_k_1 = y_k - (dt / 6 * (r1 + 2 * r2 + 2 * r3 + r4))
+    return y_k_1
 
 # MPRK functions
 # productive and destructive terms
@@ -135,21 +161,13 @@ def d2(k, x_k):
     return np.array([d21, 0, 0])
 def p3(k, x_k):
     x1, x2, x3 = x_k
-    if k % 1 == 0:
-        u_k = u[k]
-    else:
-        k = int(k)
-        u_k = (u[k] + u[k + 1]) / 2
+    u_k = get_u_k(k)
     p33 = 0
     if u_k >= 0: p33 = u_k
     return np.array([0, 0, p33])
 def d3(k, x_k):
     x1, x2, x3 = x_k
-    if k % 1 == 0:
-        u_k = u[k]
-    else:
-        k = int(k)
-        u_k = (u[k] + u[k + 1]) / 2
+    u_k = get_u_k(k)
     d33 = 0
     if u_k < 0: d33 = -u_k
     return np.array([0, 0, d33])
@@ -218,14 +236,10 @@ old_u = u
 # Forward
 for i in range(t_sum - 1):
     x_i = x[i]
-    if positivity:
+    if patankar:
         x_i1 = X_n1(i, x_i)
     else:
-        r1 = Xprime(i, x_i)
-        r2 = Xprime(i + 1 / 2, x_i + dt / 2 * r1)
-        r3 = Xprime(i + 1 / 2, x_i + dt / 2 * r2)
-        r4 = Xprime(i + 1, x_i + dt * r3)
-        x_i1 = x_i + (dt / 6 * (r1 + 2 * r2 + 2 * r3 + r4))
+        x_i1 = RK_forward(i, x_i)
     x[i + 1] = x_i1
 
 # Infectious
@@ -234,16 +248,9 @@ I = x[:, 0] / (x[:, 1] * (x[:, 2] + k_min))
 # Backward
 for i in range(1, u_sum):
     j = u_sum - i
-    t_j = t[j]
     x_j = x[j]
     y_j = y[j]
-
-    r1 = Yprime(j, x_j, y_j)
-    r2 = Yprime(j - 1 / 2, x_j, y_j - dt / 2 * r1)
-    r3 = Yprime(j - 1 / 2, x_j, y_j - dt / 2 * r2)
-    r4 = Yprime(j - 1, x_j, y_j - dt * r3)
-    y_j_1 = y_j - (dt / 6 * (r1 + 2 * r2 + 2 * r3 + r4))
-
+    y_j_1 = RK_backward(j, x_j, y_j)
     y[j - 1] = y_j_1
 
 # Sweep
@@ -272,27 +279,28 @@ while error >= tol and not (done):
         # Forward
         for i in range(t_sum - 1):
             x_i = x[i]
-            if positivity:
+            if patankar:
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
                     x_i1 = X_n1(i, x_i)
             else:
-                r1 = Xprime(i, x_i)
-                r2 = Xprime(i + 1 / 2, x_i + dt / 2 * r1)
-                r3 = Xprime(i + 1 / 2, x_i + dt / 2 * r2)
-                r4 = Xprime(i + 1, x_i + dt * r3)
-                x_i1 = x_i + (dt / 6 * (r1 + 2 * r2 + 2 * r3 + r4))
+                x_i1 = RK_forward(i, x_i)
             x[i + 1] = x_i1
+        
         # Infectious
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             I = x[:, 0] / (x[:, 1] * (x[:, 2] + k_min))
+            
             new_J = J(I, u)
         del_J = abs(old_J - new_J)
+        
         if h_n <= h_min: 
             done = True
             break
-        else: h_n = h_n / h_div
+        else: 
+            h_n = h_n / h_div
+
     if not done:
         iterations += 1
         error = del_J
@@ -300,22 +308,13 @@ while error >= tol and not (done):
         projection_J = projJ(I, u)
         h_n = h_init
         old_u = u
-    if iterations == last_iteration:
-        error = 0
     
     # Backward
     for i in range(1, u_sum):
         j = u_sum - i
-        t_j = t[j]
         x_j = x[j]
         y_j = y[j]
-
-        r1 = Yprime(j, x_j, y_j)
-        r2 = Yprime(j - 1 / 2, x_j, y_j - dt / 2 * r1)
-        r3 = Yprime(j - 1 / 2, x_j, y_j - dt / 2 * r2)
-        r4 = Yprime(j - 1, x_j, y_j - dt * r3)
-        y_j_1 = y_j - (dt / 6 * (r1 + 2 * r2 + 2 * r3 + r4))
-        
+        y_j_1 = RK_backward(j, x_j, y_j)
         y[j - 1] = y_j_1
 
     # Sweep
