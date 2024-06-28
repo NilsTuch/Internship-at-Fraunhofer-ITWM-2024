@@ -10,11 +10,10 @@ import sympy as sp
 import warnings
 from matplotlib.offsetbox import AnchoredText
 import json
-# TODO: program is currently not saving
 
-# in {"dt", "tol", "stepsize_init", "stepsize_div", "A", "B"} or in {0, ..., 5}
+# in {"dt", "tol", "stepsize_init", "h_init", "stepsize_div", "h_div", "A", "B"} or {0, ..., 5}
 chosen_parameter = "A"
-parameter_range = [1, 2]
+parameter_range = [.1, 1, 10]
 
 # print info:
 print_parameter_range = True
@@ -33,7 +32,7 @@ tol = 1e-4
 h_init = 1e-2
 h_div = 4
 A = 1e1
-B = 1e0
+B = 1e1
 parameters = [dt, tol, h_init, h_div, A, B]
 
 # minimal allowed stepsize in u
@@ -42,7 +41,7 @@ h_min = 1e-13
 Armijo = 1e-3
 # length of fit
 t_u = 270
-# minimal k value for MPRK
+# minimal kappa value for MPRK
 k_min = 0.04
 
 x_0 = [0.007, 0.993, 0.3 - k_min]
@@ -54,14 +53,16 @@ parameter_str_to_int = {
     "dt" : 0,
     "tol" : 1,
     "stepsize_init" : 2,
+    "h_init" : 2,
     "stepsize_div" : 3,
+    "h_div" : 3,
     "A" : 4,
     "B" : 5}
 if isinstance(chosen_parameter, str):
     chosen_parameter = parameter_str_to_int[chosen_parameter]
 
 # datapoints[0] == time (days), datapoints[1] == i meassured
-datapoints = np.load("datapoints.npy")
+datapoints = np.load("sentisurv/sentisurv_data.npy")
 t_0 = datapoints[0, 0]
 t_end = datapoints[0, -1]
 
@@ -232,7 +233,7 @@ def X_1(k, x_k):
     x_1 = np.linalg.solve(A, x_k)
     return x_1
 # x^(n+1)
-def X_n1(k, x_k):
+def MPRK_forward(k, x_k):
     x1, x2, x3 = x_k
     x_1 = X_1(k, x_k)
     x1, x2, x3 = x_1
@@ -394,7 +395,7 @@ for value in parameter_range:
     # Forward
     for i in range(t_sum - 1):
         x_i = x[i]
-        x_i1 = X_n1(i, x_i)
+        x_i1 = MPRK_forward(i, x_i)
         x[i + 1] = x_i1
     # Infectious
     I = x[:, 0] / (x[:, 1] * (x[:, 2] + k_min))
@@ -431,7 +432,7 @@ for value in parameter_range:
                 x_i = x[i]
                 with warnings.catch_warnings(): # TODO
                     warnings.simplefilter("ignore")
-                    x_i1 = X_n1(i, x_i)
+                    x_i1 = MPRK_forward(i, x_i)
                 x[i + 1] = x_i1
             # Infectious
             with warnings.catch_warnings(): # TODO
@@ -495,11 +496,11 @@ for RK_plt, MPRK_plt in zip([RK_Iterations, RK_J, RK_K, RK_projJ],
                             [MPRK_Iterations, MPRK_J, MPRK_K, MPRK_projJ]):
     fig, ax = plt.subplots()
     at = AnchoredText(fixed, pad = 0.5, borderpad = 2, 
-                      loc="lower right", bbox_to_anchor=(180, -20))
+                      loc="lower right", bbox_to_anchor=(475, 0))
     at.patch.set_boxstyle("round,pad=0,rounding_size=0.4")
-    ax.add_artist(at)
-    ax.plot(parameter_range, RK_plt, label="RK")
-    ax.plot(parameter_range, MPRK_plt, label="MPRK")
+    fig.add_artist(at)
+    ax.plot(parameter_range, RK_plt, label="Computed with RK")
+    ax.plot(parameter_range, MPRK_plt, label="Computed with MPRK")
     ax.legend(loc="best")
     ax.set_xlabel(variables_list[chosen_parameter])
     if chosen_parameter == 0: ax.set_xscale("log", base = 2)
@@ -523,10 +524,15 @@ fixed_parts = ["dt = " + str(dt),
                "h_div= " + str(h_div), 
                "A = " + str(A),
                "B = " + str(B)]
-fixed_parts[chosen_parameter] = (print_variables[chosen_parameter] + 
-                                 " = " + str(parameter_range[0]) + 
-                                 "-" + str(parameter_range[1]) + 
-                                 "--" + str(parameter_range[-1]))
+if len(parameter_range) >= 3:
+    fixed_parts[chosen_parameter] = (print_variables[chosen_parameter] + 
+                                     " = " + str(parameter_range[0]) + 
+                                     "-" + str(parameter_range[1]) + 
+                                     "--" + str(parameter_range[-1]))
+elif len(parameter_range) ==2:
+    fixed_parts[chosen_parameter] = (print_variables[chosen_parameter] + 
+                                     " = " + str(parameter_range[0]) + 
+                                     "--" + str(parameter_range[1]))
 result_name = variables_list[chosen_parameter] + "|" + "|".join(fixed_parts)
 file_name = "data/" + result_name + ".json"
 result = {

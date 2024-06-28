@@ -6,7 +6,6 @@ Created : May 2024
 
 import matplotlib.pyplot as plt
 import numpy as np
-import scipy
 import sympy as sp
 
 # print info

@@ -33,7 +33,7 @@ TAU = 3.58
 DEL = 4
 
 # datapoints[0] == time (int), datapoints[1] == i meassured
-datapoints = np.load("datapoints.npy")
+datapoints = np.load("sentisurv/sentisurv_data.npy")
 
 # time
 t_0 = datapoints[0, 0]
@@ -196,7 +196,7 @@ def X_1(k, x_k):
     x_1 = np.linalg.solve(A, x_k)
     return x_1
 # x^(n+1)
-def X_n1(k, x_k):
+def MPRK_forward(k, x_k):
     x1, x2, x3 = x_k
     x_1 = X_1(k, x_k)
     x1, x2, x3 = x_1
@@ -237,7 +237,7 @@ old_u = u
 for i in range(t_sum - 1):
     x_i = x[i]
     if patankar:
-        x_i1 = X_n1(i, x_i)
+        x_i1 = MPRK_forward(i, x_i)
     else:
         x_i1 = RK_forward(i, x_i)
     x[i + 1] = x_i1
@@ -282,7 +282,7 @@ while error >= tol and not (done):
             if patankar:
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
-                    x_i1 = X_n1(i, x_i)
+                    x_i1 = MPRK_forward(i, x_i)
             else:
                 x_i1 = RK_forward(i, x_i)
             x[i + 1] = x_i1

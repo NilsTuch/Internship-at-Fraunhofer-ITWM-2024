@@ -12,18 +12,11 @@ show_parameter_box = True
 legend_outside_plot = True
 
 dataset_names = [ # without "data/" adn ".json"
-    "A|dt = 4|tol = 0.0001|h_init = 0.01|h_div= 4|A = 1-2--2|B = 1.0",
-    "A|dt = 4|tol = 0.0001|h_init = 0.01|h_div= 4|A = 1-2--2|B = 10.0"
+    "A|dt = 4|tol = 0.0001|h_init = 0.01|h_div= 4|A = 0.1-1--10|B = 1.0",
+    "A|dt = 4|tol = 0.0001|h_init = 0.01|h_div= 4|A = 0.1-1--10|B = 10.0"
     ]
 
 variables = ["$\Delta$t", "tol", "$h_{init}$", "$h_{div}$", "A", "B"] # 0, 1, 2, 3, 4, 5
-
-def get_2nd_chosen_par(possible_vars):
-    x = -1
-    for var in possible_vars:
-        if any(var.count(x) < len(var) for x in var):
-            x = possible_vars.index(var)
-    return x
 
 # positioning of parameter box
 legend_x = .9
@@ -42,9 +35,6 @@ K_fig, K_ax = plt.subplots()
 projJ_fig, projJ_ax = plt.subplots()
 figs = [iter_fig, J_fig, K_fig, projJ_fig,]
 axs = [iter_ax, J_ax, K_ax, projJ_ax,]
-    
-A = 10
-B = 1
 
 dts = []
 tolerances = []
@@ -60,7 +50,7 @@ list_RK_data = []
 list_MPRK_data = []
     
 for dataset_name in dataset_names:
-    # loading the json
+    # loading json
     file_name = directory_name + "/" + dataset_name + ".json"
     file = open(file_name)
     data = json.load(file)
@@ -97,7 +87,13 @@ for dataset_name in dataset_names:
         list_MPRK_data.append(MPRK_data)
 
 # determine second varianle
-second_chosen_par = get_2nd_chosen_par([dts, tolerances, init_steps, step_divisors, As, Bs])
+def get_second_chosen_par(possible_vars):
+    x = -1
+    for var in possible_vars:
+        if any(var.count(x) < len(var) for x in var):
+            x = possible_vars.index(var)
+    return x
+second_chosen_par = get_second_chosen_par([dts, tolerances, init_steps, step_divisors, As, Bs])
 
 for i in range(len(list_parameter_range)):
     parameters = list_parameters[i]
@@ -106,49 +102,45 @@ for i in range(len(list_parameter_range)):
     MPRK_data = list_MPRK_data[i]
     
     # plots
-    if True:
-        if second_chosen_par != -1:
-            label_suffix = ", " + variables[second_chosen_par] + " = "  # TODO
-            label_suffix += str(parameters[variables[second_chosen_par]])
-        else: label_suffix = ""
-        
-        iter_ax.plot(parameter_range, RK_data["Iterations"], label="Computed with RK" + label_suffix)
-        iter_ax.plot(parameter_range, MPRK_data["Iterations"], label="Computed with MPRK" + label_suffix)
-        
-        J_ax.plot(parameter_range, RK_data["J"], label="Computed with RK" + label_suffix)
-        J_ax.plot(parameter_range, MPRK_data["J"], label="Computed with MPRK" + label_suffix)
-        
-        K_ax.plot(parameter_range, RK_data["K"], label="Computed with RK" + label_suffix)
-        K_ax.plot(parameter_range, MPRK_data["K"], label="Computed with MPRK" + label_suffix)
+    if second_chosen_par != -1:
+        label_suffix = ", " + variables[second_chosen_par] + " = "  # TODO
+        label_suffix += str(parameters[variables[second_chosen_par]])
+    else: label_suffix = ""
+    RK_label = "Computed with RK" + label_suffix
+    MPRK_label = "Computed with MPRK" + label_suffix
+    
+    for ax, RK_graph, MPRK_graph in zip(axs, 
+                                        [RK_data["Iterations"], RK_data["J"], RK_data["K"], RK_data["projJ"]],
+                                        [MPRK_data["Iterations"], MPRK_data["J"], MPRK_data["K"], MPRK_data["projJ"]]):
+        ax.plot(parameter_range, RK_graph, label = RK_label)
+        ax.plot(parameter_range, MPRK_graph, label = MPRK_label)
 
-        projJ_ax.plot(parameter_range, RK_data["projJ"], label="Computed with RK" + label_suffix)
-        projJ_ax.plot(parameter_range, MPRK_data["projJ"], label="Computed with MPRK" + label_suffix)
-
-fixed_parts = ["dt = " + str(dt), 
+parameter_text_parts = ["dt = " + str(dt), 
                "tolerance = " + str(tolerance), 
                "initial stepsize = " + str(init_step), 
                "stepsize divisor = " + str(step_divisor),
                "A = " + str(A),
                "B = " + str(B)]
 if second_chosen_par != -1: 
-    fixed_parts[second_chosen_par] = variables[second_chosen_par] + " = see legend"
-fixed = '\n'.join(fixed_parts[:first_chosen_par] + fixed_parts[first_chosen_par + 1:])
+    parameter_text_parts[second_chosen_par] = variables[second_chosen_par] + " = see legend"
+parameter_text = '\n'.join(parameter_text_parts[:first_chosen_par] + parameter_text_parts[first_chosen_par + 1:])
 
 for fig, ax in zip(figs, axs):
-    at = AnchoredText(fixed, pad = 0.5, borderpad = 0, 
-                      loc="upper left", bbox_to_anchor=(text_x, text_y, text_width, text_height))
-    at.patch.set_edgecolor('lightgrey')
-    at.patch.set_boxstyle("round,pad=0,rounding_size=0.2")
     if show_parameter_box:
+        at = AnchoredText(parameter_text, pad = 0.5, borderpad = 0, 
+                          loc="upper left", bbox_to_anchor=(text_x, text_y, text_width, text_height))
+        at.patch.set_edgecolor('lightgrey')
+        at.patch.set_boxstyle("round,pad=0,rounding_size=0.2")
         fig.add_artist(at)
     
     if legend_outside_plot:
         fig.legend(loc = "upper left", bbox_to_anchor=(legend_x, legend_y, legend_width, legend_height))
     else:
         ax.legend(loc="best")
+    
     ax.set_xlabel(variables[first_chosen_par])
     if first_chosen_par == 0: ax.set_xscale('log', base = 2)
-    elif first_chosen_par in (1, 2, 4, 5): ax.set_xscale('log', base = 10)
+    elif first_chosen_par in (1, 2, 4, 5): ax.set_xscale('log')
     ax.grid()
 
 iter_ax.set_yscale('log', base = 10)
